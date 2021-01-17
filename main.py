@@ -23,6 +23,8 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr',default= 1.2e-3, type=float, help='Learning rate')
+parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--prune_freq', default=10, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--dataset', default='mnist', type=str, help='mnist | cifar10 | fashionmnist | cifar100')
@@ -37,14 +39,12 @@ os.environ['CUDA_VISIBLE_DEVICES']=args.gpu
 
 writer = SummaryWriter()
 sns.set_style('darkgrid')
-iterations = 3
+best_accuracy = 0
 
 # Function for Training
 def train(model, train_loader, optimizer, criterion, mask, score):
-    sample = 100
-    best_accuracy = 0
+    global best_accuracy
     train_ite = len(train_loader)
-    
     compress = []
     bestacc = []
     loss = []
@@ -94,7 +94,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 cnt += 1
         
         optimizer.step()
-        if i%sample==sample-1:
+        if i%args.prune_freq==args.prune_freq-1:
             cnt = 0
             for name, p in model.named_parameters():
                 if 'weight' in name:
@@ -116,7 +116,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 best_accuracy = accuracy
                 utils.checkdir(f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/')
                 torch.save(model,f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/{i}_model_{args.prune_type}.pth.tar')
-            print(f'Train Epoch: {i}/{train_ite} Loss: {train_loss.item():.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')
+            #print(f'Train Epoch: {i}/{train_ite} Loss: {train_loss.item():.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')
             #pbar.set_description(f'Train Epoch: {i}/{train_ite} Loss: {loss:.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')       
             compress.append(comp1)
             bestacc.append(best_accuracy)
@@ -316,7 +316,7 @@ if __name__=='__main__':
     comp_ratio = []
     bestacc = []
     comp1 = 0
-    for i in range(iterations):
+    for i in range(args.epochs):
         comp1, loss_, acc_, comp_ratio_, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
         loss += loss_
         acc += acc_
@@ -342,6 +342,7 @@ if __name__=='__main__':
     plt.title(f'Loss and Accuracy ({args.dataset},{args.arch_type})')
     plt.xlabel('Iterations')
     plt.ylabel('Loss and Accuracy')
+    plt.ylim(0, 100)
     plt.legend()
     plt.grid(color='gray')
     utils.checkdir(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/')
