@@ -1,7 +1,7 @@
 # The-Lottery-Ticket-Hypothesis-Binary-Neural-Networks-Pruning 
 [![Made With python 3.7](https://img.shields.io/badge/Made%20with-Python%203.7-brightgreen)]() 
 
-This repository contains a Pytorch implementation of the paper [Multi-prize Lottery Ticket Hypothesis: Finding Accurate Binary Neural Networks by Pruning a Randomly Weighted Network](https://openreview.net/pdf?id=U_mat0b9iv).
+This repository contains a Pytorch implementation of the paper [Multi-prize Lottery Ticket Hypothesis](https://openreview.net/pdf?id=U_mat0b9iv).
 
 ## Requirements
 ```
@@ -23,26 +23,23 @@ python3 main.py
 	- Default : `mnist`
 - `--prune_percent`	: Percentage of weight to be pruned after each cycle. 
 	- Default : `10`
-- `--prune_iterations`	: Number of cycle of pruning that should be done. 
+- `--epochs`	: Number of cycle of pruning that should be done. 
 	- Default : `35`
 - `--lr`	: Learning rate 
 	- Default : `1.2e-3`
 - `--batch_size`	: Batch size 
 	- Default : `60`
-- `--end_iter`	: Number of Epochs 
-	- Default : `100`
-- `--print_freq`	: Frequency for printing accuracy and loss 
+- `--test_freq`	: Frequency for Validation 
 	- Default : `1`
-- `--valid_freq`	: Frequency for Validation 
-	- Default : `1`
-- `--gpu`	: Decide Which GPU the program should use 
+- `--gpu`	: Decide which GPU the program should use 
 	- Default : `0`
-
+- `--binarize`	: Model binarization
+	- Default : `False`
 
 ## Repository Structure
 ```
-Lottery-Ticket-Hypothesis-in-Pytorch
-├── archs
+The-Lottery-Ticket-Hypothesis-Binary-Neural-Networks-Pruning
+├── models
 │   ├── cifar10
 │   │   ├── AlexNet.py
 │   │   ├── densenet.py
@@ -62,7 +59,6 @@ Lottery-Ticket-Hypothesis-in-Pytorch
 │       ├── LeNet5.py
 │       ├── resnet.py
 │       └── vgg.py
-├── combine_plots.py
 ├── dumps
 ├── main.py
 ├── plots
