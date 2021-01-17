@@ -15,7 +15,6 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
 from torch.autograd import Function
 
 # Custom Libraries
@@ -23,8 +22,8 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr',default= 1.2e-3, type=float, help='Learning rate')
-parser.add_argument('--epochs', default=10, type=int)
-parser.add_argument('--prune_freq', default=10, type=int)
+parser.add_argument('--epochs', default=50, type=int)
+parser.add_argument('--test_freq', default=50, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
 parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--dataset', default='mnist', type=str, help='mnist | cifar10 | fashionmnist | cifar100')
@@ -36,14 +35,11 @@ args = parser.parse_args()
 
 os.environ['CUDA_DEVICE_ORDER']='PCI_BUS_ID'
 os.environ['CUDA_VISIBLE_DEVICES']=args.gpu
-
-writer = SummaryWriter()
 sns.set_style('darkgrid')
-best_accuracy = 0
 
 # Function for Training
 def train(model, train_loader, optimizer, criterion, mask, score):
-    global best_accuracy
+    best_accuracy = 0
     train_ite = len(train_loader)
     compress = []
     bestacc = []
@@ -94,7 +90,8 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 cnt += 1
         
         optimizer.step()
-        if i%args.prune_freq==args.prune_freq-1:
+        if i%args.test_freq==args.test_freq-1:
+            '''
             cnt = 0
             for name, p in model.named_parameters():
                 if 'weight' in name:
@@ -107,6 +104,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                     p.data = torch.from_numpy(p.data.cpu().numpy() * mask[cnt]).to(p.device)
                     #p.data = torch.from_numpy(score[cnt].cpu().numpy() * mask[cnt]).to(p.device)
                     cnt += 1
+            '''
             loss.append(train_loss.item())
             
             accuracy = test(model, mask, test_loader, criterion)
@@ -120,12 +118,10 @@ def train(model, train_loader, optimizer, criterion, mask, score):
             #pbar.set_description(f'Train Epoch: {i}/{train_ite} Loss: {loss:.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')       
             compress.append(comp1)
             bestacc.append(best_accuracy)
-    writer.add_scalar('Accuracy/test', best_accuracy, comp1)
-    # Dumping mask
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
     with open(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_mask_{comp1}.pkl', 'wb') as fp:
         pickle.dump(mask, fp)
-    return comp1, loss, acc, compress, bestacc
+    return loss, acc, best_accuracy
     
 
 # Function for Testing
@@ -311,49 +307,67 @@ if __name__=='__main__':
     optimizer = torch.optim.Adam(model.parameters(), weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
     
-    loss = []
-    acc = []
     comp_ratio = []
     bestacc = []
-    comp1 = 0
     for i in range(args.epochs):
-        comp1, loss_, acc_, comp_ratio_, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
-        loss += loss_
-        acc += acc_
-        comp_ratio += comp_ratio_
-        bestacc += bestacc_
-    len_acc = len(acc)
-    len_bestacc = len(bestacc)
-    loss = np.array(loss)
-    acc = np.array(acc)
+        loss, acc, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
+        if i:
+            cnt = 0
+            for name, p in model.named_parameters():
+                if 'weight' in name:
+                    tensor = p.data.cpu().numpy()
+                    alive = tensor[np.nonzero(tensor)]
+                    percentile_value = np.percentile(abs(alive), args.prune_percent)
+                    
+                    mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
+                    p.data = torch.from_numpy(p.data.cpu().numpy() * mask[cnt]).to(p.device)
+                    cnt += 1
+            cnt = 0
+            for name, p in model.named_parameters(): 
+                if "weight" in name: 
+                    p.data = torch.from_numpy(mask[cnt] * initial_state_dict[name].cpu().numpy()).to(p.device)
+                    cnt += 1
+                if "bias" in name:
+                    p.data = initial_state_dict[name]
+        comp1 = utils.print_nonzeros(model)
+        comp_ratio.append(comp1)
+        bestacc.append(bestacc_)
+        
+        len_acc = len(acc)
+        loss = np.array(loss)
+        acc = np.array(acc)
+        
+        # Dumping Values for Plotting
+        utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
+        loss.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_loss_{comp1}.dat')
+        acc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_accuracy_{comp1}.dat')
+        
+        # Plotting Loss (Training), Accuracy (Testing), Iteration Curve
+        plt.plot(np.arange(len_acc), 100*(loss - np.min(loss)).astype(float), c='blue', label='Loss')
+        plt.plot(np.arange(len_acc), acc, c='red', label='Accuracy')
+        plt.title(f'Loss and Accuracy ({args.dataset},{args.arch_type})')
+        plt.xlabel('Iterations')
+        plt.ylabel('Loss and Accuracy')
+        plt.ylim(0, 100)
+        plt.legend()
+        plt.grid(color='gray')
+        utils.checkdir(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/')
+        plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_LossVsAccuracy_{comp1}.png', dpi=1200)
+        plt.close()
+    
     comp_ratio = np.array(comp_ratio)
     bestacc = np.array(bestacc)
+    print(bestacc)
     
-    # Dumping Values for Plotting
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
-    loss.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_loss_{comp1}.dat')
-    acc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_accuracy_{comp1}.dat')
     comp_ratio.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_compression.dat')
     bestacc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_bestaccuracy.dat')
 
-    # Plotting Loss (Training), Accuracy (Testing), Iteration Curve
-    plt.plot(np.arange(len_acc), 100*(loss - np.min(loss)).astype(float), c='blue', label='Loss')
-    plt.plot(np.arange(len_acc), acc, c='red', label='Accuracy')
-    plt.title(f'Loss and Accuracy ({args.dataset},{args.arch_type})')
-    plt.xlabel('Iterations')
-    plt.ylabel('Loss and Accuracy')
-    plt.ylim(0, 100)
-    plt.legend()
-    plt.grid(color='gray')
-    utils.checkdir(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/')
-    plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_LossVsAccuracy_{comp1}.png', dpi=1200)
-    plt.close()
-    
     plt.plot(comp_ratio, bestacc, c='blue', label='Winning tickets')
     plt.title(f'Test Accuracy vs Unpruned Weights Percentage ({args.dataset},{args.arch_type})')
     plt.xlabel('Unpruned Weights Percentage')
     plt.ylabel('test accuracy')
-    plt.xlim(100, np.min(comp_ratio))
+    plt.xlim(np.max(comp_ratio), np.min(comp_ratio))
     plt.ylim(0, 100)
     plt.legend()
     plt.grid(color='gray')
