@@ -6,7 +6,7 @@ class Conv2(nn.Module):
         super(Conv2, self).__init__()
         
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
@@ -16,7 +16,7 @@ class Conv2(nn.Module):
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(16384, 256),
+            nn.Linear(12544, 256),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(256, 256),
@@ -36,7 +36,7 @@ class Conv4(nn.Module):
         super(Conv4, self).__init__()
         
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
@@ -54,7 +54,7 @@ class Conv4(nn.Module):
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(8192, 256),
+            nn.Linear(6272, 256),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(256, 256),
@@ -74,7 +74,7 @@ class Conv6(nn.Module):
         super(Conv6, self).__init__()
         
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
@@ -100,7 +100,7 @@ class Conv6(nn.Module):
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(4096, 256),
+            nn.Linear(2304, 256),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(256, 256),
@@ -120,7 +120,7 @@ class Conv8(nn.Module):
         super(Conv8, self).__init__()
         
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
@@ -154,7 +154,7 @@ class Conv8(nn.Module):
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(2048, 256),
+            nn.Linear(512, 256),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(256, 256),

@@ -21,21 +21,19 @@ from torch.autograd import Function
 import utils
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--lr',default= 1.2e-3, type=float, help='Learning rate')
+parser.add_argument('--lr', default= 1.2e-3, type=float)
 parser.add_argument('--epochs', default=50, type=int)
 parser.add_argument('--test_freq', default=50, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
-parser.add_argument('--gpu', default='0', type=str)
-parser.add_argument('--dataset', default='mnist', type=str, help='mnist | cifar10 | fashionmnist | cifar100')
-parser.add_argument('--arch_type', default='fc1', type=str, help='SmallVGG | binaryLeNet5 | binaryFc1 | fc1 | lenet5 | alexnet | vgg16 | resnet18 | densenet121')
-parser.add_argument('--prune_type', default='lt', type=str, help='lt | reinit')
+parser.add_argument('--dataset', default='mnist', choices=['mnist', 'cifar10'], type=str)
+parser.add_argument('--arch_type', default='Conv8', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
 parser.add_argument('--prune_percent', default=5, type=int, help='Pruning percent')
-parser.add_argument('--binarize', action='store_true', help='binarize')
+parser.add_argument('--mini_batch', action='store_true')
+parser.add_argument('--score', action='store_true')
+parser.add_argument('--binarize', action='store_true')
 args = parser.parse_args()
 
-os.environ['CUDA_DEVICE_ORDER']='PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES']=args.gpu
-sns.set_style('darkgrid')
+sns.set_style('whitegrid')
 
 # Function for Training
 def train(model, train_loader, optimizer, criterion, mask, score):
@@ -79,32 +77,27 @@ def train(model, train_loader, optimizer, criterion, mask, score):
         cnt = 0
         for name, p in model.named_parameters():
             if 'weight' in name:
-                #M = torch.from_numpy(mask[cnt]).to(device)
-                #alpha = (torch.sum((p.data * M)**2) / torch.sum(M**2))**0.5
-                
                 tensor = p.data.cpu().numpy()
                 grad_tensor = p.grad.data.cpu().numpy()
                 grad_tensor = np.where(tensor < 1e-6, 0, grad_tensor)
                 p.grad.data = torch.from_numpy(grad_tensor).to(device)
-                #score[cnt] -= lr * p.grad.data
+                score[cnt] -= lr * p.grad.data
                 cnt += 1
         
         optimizer.step()
-        if i%args.test_freq==args.test_freq-1:
-            '''
-            cnt = 0
-            for name, p in model.named_parameters():
-                if 'weight' in name:
-                    tensor = p.data.cpu().numpy()
-                    #tensor = score[cnt].cpu().numpy()
-                    alive = tensor[np.nonzero(tensor)]
-                    percentile_value = np.percentile(abs(alive), args.prune_percent)
-                    
-                    mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
-                    p.data = torch.from_numpy(p.data.cpu().numpy() * mask[cnt]).to(p.device)
-                    #p.data = torch.from_numpy(score[cnt].cpu().numpy() * mask[cnt]).to(p.device)
-                    cnt += 1
-            '''
+        if args.mini_batch or i%args.test_freq==args.test_freq-1:
+            if args.mini_batch:
+                cnt = 0
+                for name, p in model.named_parameters():
+                    if 'weight' in name:
+                        tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
+                        alive = tensor[np.nonzero(tensor)]
+                        percentile_value = np.percentile(abs(alive), args.prune_percent)
+                        mask[cnt] = np.where(abs(score[cnt] if args.score else p.data) < percentile_value, 0, mask[cnt])
+                        p.data = torch.from_numpy(mask[cnt] * p.data.cpu().numpy()).to(p.device)
+                        if args.score:
+                            score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
+                        cnt += 1
             loss.append(train_loss.item())
             
             accuracy = test(model, mask, test_loader, criterion)
@@ -113,15 +106,17 @@ def train(model, train_loader, optimizer, criterion, mask, score):
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
                 utils.checkdir(f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/')
-                torch.save(model,f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/{i}_model_{args.prune_type}.pth.tar')
+                torch.save(model,f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/{i}_model.pth.tar')
             #print(f'Train Epoch: {i}/{train_ite} Loss: {train_loss.item():.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')
             #pbar.set_description(f'Train Epoch: {i}/{train_ite} Loss: {loss:.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')       
-            compress.append(comp1)
-            bestacc.append(best_accuracy)
+            if args.mini_batch:
+                comp1 = utils.print_nonzeros(model)
+                compress.append(comp1)
+                bestacc.append(best_accuracy)
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
-    with open(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_mask_{comp1}.pkl', 'wb') as fp:
+    with open(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/mask_{comp1}.pkl', 'wb') as fp:
         pickle.dump(mask, fp)
-    return loss, acc, best_accuracy
+    return loss, acc, best_accuracy, compress, bestacc
     
 
 # Function for Testing
@@ -159,19 +154,6 @@ def test(model, mask, test_loader, criterion):
         test_loss /= len(test_loader.dataset)
         accuracy = 100. * correct / len(test_loader.dataset)
     return accuracy
-
-def prune_by_percentile(model, mask, percent, reinit=False, **kwargs):
-    cnt = 0
-    for name, p in model.named_parameters():
-        if 'weight' in name:
-            tensor = p.data.cpu().numpy()
-            alive = tensor[np.nonzero(tensor)]
-            percentile_value = np.percentile(abs(alive), percent)
-            
-            mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
-            p.data = torch.from_numpy(tensor * mask[cnt]).to(p.device)
-            cnt += 1
-    return mask
 
 def weight_init(m):
     if isinstance(m, nn.Conv1d):
@@ -240,26 +222,17 @@ def weight_init(m):
 
 if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    reinit = True if args.prune_type=='reinit' else False
 
     # Data Loader
     transform=transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.1307,), (0.3081,))])
     if args.dataset == 'mnist':
         traindataset = datasets.MNIST('data', train=True, download=True,transform=transform)
         testdataset = datasets.MNIST('data', train=False, transform=transform)
-        from models.mnist import AlexNet, LeNet5, fc1, vgg, resnet, binaryFc1, binaryLeNet5
+        from models.mnist import AlexNet, LeNet5, fc1, vgg, resnet, SmallVGG
     elif args.dataset == 'cifar10':
         traindataset = datasets.CIFAR10('data', train=True, download=True,transform=transform)
         testdataset = datasets.CIFAR10('data', train=False, transform=transform)
-        from models.cifar10 import AlexNet, LeNet5, fc1, vgg, resnet, densenet, binaryFc1, SmallVGG
-    elif args.dataset == 'fashionmnist':
-        traindataset = datasets.FashionMNIST('data', train=True, download=True,transform=transform)
-        testdataset = datasets.FashionMNIST('data', train=False, transform=transform)
-        from models.mnist import AlexNet, LeNet5, fc1, vgg, resnet
-    elif args.dataset == 'cifar100':
-        traindataset = datasets.CIFAR100('data', train=True, download=True,transform=transform)
-        testdataset = datasets.CIFAR100('data', train=False, transform=transform)
-        from models.cifar100 import AlexNet, fc1, LeNet5, vgg, resnet
+        from models.cifar10 import AlexNet, LeNet5, fc1, vgg, resnet, SmallVGG
     else:
         raise Exception('\nWrong Dataset choice\n')
 
@@ -278,14 +251,14 @@ if __name__=='__main__':
         model = vgg.vgg16().to(device)
     elif args.arch_type == 'resnet18':
         model = resnet.resnet18().to(device)
-    elif args.arch_type == 'densenet121':
-        model = densenet.densenet121().to(device)
-    elif args.arch_type == 'binaryFc1':
-        model = binaryFc1.fc1().to(device)
-    elif args.arch_type == 'binaryLeNet5':
-        model = binaryLeNet5.LeNet5().to(device)
-    elif args.arch_type == 'SmallVGG':
-        model = SmallVGG.SmallVGG().to(device)
+    elif args.arch_type == 'Conv2':
+        model = SmallVGG.Conv2().to(device)
+    elif args.arch_type == 'Conv4':
+        model = SmallVGG.Conv4().to(device)
+    elif args.arch_type == 'Conv6':
+        model = SmallVGG.Conv6().to(device)
+    elif args.arch_type == 'Conv8':
+        model = SmallVGG.Conv8().to(device)
     else:
         raise Exception('\nWrong Model choice\n')
 
@@ -293,7 +266,8 @@ if __name__=='__main__':
     model.apply(weight_init)
     initial_state_dict = copy.deepcopy(model.state_dict())
     utils.checkdir(f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/')
-    torch.save(model, f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/initial_state_dict_{args.prune_type}.pth.tar')
+    torch.save(model, f'{os.getcwd()}/saves/{args.arch_type}/{args.dataset}/initial_state_dict.pth.tar')
+
 
     # Making Initial Mask
     mask = []
@@ -302,7 +276,10 @@ if __name__=='__main__':
         if 'weight' in name:
             tensor = p.data.cpu().numpy()
             mask.append(np.ones_like(tensor))
-            #score.append(init.xavier_normal_(torch.ones_like(p.data)))
+            try:
+                score.append(init.xavier_normal_(torch.ones_like(p.data)))
+            except:
+                score.append(init.normal_(torch.ones_like(p.data), mean=1, std=0.02))
     
     optimizer = torch.optim.Adam(model.parameters(), weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
@@ -310,28 +287,35 @@ if __name__=='__main__':
     comp_ratio = []
     bestacc = []
     for i in range(args.epochs):
-        loss, acc, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
+        loss, acc, best_accuracy_, compress_, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
         if i:
-            cnt = 0
-            for name, p in model.named_parameters():
-                if 'weight' in name:
-                    tensor = p.data.cpu().numpy()
-                    alive = tensor[np.nonzero(tensor)]
-                    percentile_value = np.percentile(abs(alive), args.prune_percent)
-                    
-                    mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
-                    p.data = torch.from_numpy(p.data.cpu().numpy() * mask[cnt]).to(p.device)
-                    cnt += 1
+            if not args.mini_batch:
+                cnt = 0
+                for name, p in model.named_parameters():
+                    if 'weight' in name:
+                        tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
+                        alive = tensor[np.nonzero(tensor)]
+                        percentile_value = np.percentile(abs(alive), args.prune_percent)
+                        mask[cnt] = np.where(abs(score[cnt] if args.score else p.data) < percentile_value, 0, mask[cnt])
+                        if args.score:
+                            score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
+                        cnt += 1
             cnt = 0
             for name, p in model.named_parameters(): 
-                if "weight" in name: 
+                if 'weight' in name: 
                     p.data = torch.from_numpy(mask[cnt] * initial_state_dict[name].cpu().numpy()).to(p.device)
                     cnt += 1
-                if "bias" in name:
+                if 'bias' in name:
                     p.data = initial_state_dict[name]
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
         comp1 = utils.print_nonzeros(model)
-        comp_ratio.append(comp1)
-        bestacc.append(bestacc_)
+        if args.mini_batch:
+            comp_ratio += compress_
+            bestacc += bestacc_
+        else:
+            comp_ratio.append(comp1)
+            bestacc.append(best_accuracy_)
         
         len_acc = len(acc)
         loss = np.array(loss)
@@ -339,8 +323,8 @@ if __name__=='__main__':
         
         # Dumping Values for Plotting
         utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
-        loss.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_loss_{comp1}.dat')
-        acc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_all_accuracy_{comp1}.dat')
+        loss.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/all_loss_{comp1}.dat')
+        acc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/all_accuracy_{comp1}.dat')
         
         # Plotting Loss (Training), Accuracy (Testing), Iteration Curve
         plt.plot(np.arange(len_acc), 100*(loss - np.min(loss)).astype(float), c='blue', label='Loss')
@@ -352,16 +336,19 @@ if __name__=='__main__':
         plt.legend()
         plt.grid(color='gray')
         utils.checkdir(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/')
-        plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_LossVsAccuracy_{comp1}.png', dpi=1200)
+        plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/LossVsAccuracy_{comp1}.png', dpi=1200)
         plt.close()
+        
+        if args.mini_batch:
+            break
     
     comp_ratio = np.array(comp_ratio)
     bestacc = np.array(bestacc)
     print(bestacc)
     
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
-    comp_ratio.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_compression.dat')
-    bestacc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_bestaccuracy.dat')
+    comp_ratio.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/compression.dat')
+    bestacc.dump(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/bestaccuracy.dat')
 
     plt.plot(comp_ratio, bestacc, c='blue', label='Winning tickets')
     plt.title(f'Test Accuracy vs Unpruned Weights Percentage ({args.dataset},{args.arch_type})')
@@ -372,6 +359,6 @@ if __name__=='__main__':
     plt.legend()
     plt.grid(color='gray')
     utils.checkdir(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/')
-    plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/{args.prune_type}_AccuracyVsWeights.png', dpi=1200)
+    plt.savefig(f'{os.getcwd()}/plots/lt/{args.arch_type}/{args.dataset}/AccuracyVsWeights.png', dpi=1200)
     plt.close()
     
