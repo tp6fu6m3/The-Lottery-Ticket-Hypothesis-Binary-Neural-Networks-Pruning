@@ -12,27 +12,26 @@ pip3 install -r requirements.txt
 ```
 python3 main.py
 ```
-- `--prune_type` : Type of pruning  
-	- Options : `lt` - Lottery Ticket Hypothesis, `reinit` - Random reinitialization
-	- Default : `lt`
-- `--arch_type`	 : Type of architecture
-	- Options : `fc1` - Simple fully connected network, `lenet5` - LeNet5, `AlexNet` - AlexNet, `resnet18` - Resnet18, `vgg16` - VGG16 
-	- Default : `fc1`
+- `--lr`	: Learning rate 
+	- Default : `1.2e-3`
+- `--epochs`	: Number of cycle of pruning that should be done. 
+	- Default : `35`
+- `--test_freq`	: Frequency for Validation 
+	- Default : `1`
+- `--batch_size`	: Batch size 
+	- Default : `60`
 - `--dataset`	: Choice of dataset 
 	- Options : `mnist`, `fashionmnist`, `cifar10`, `cifar100` 
 	- Default : `mnist`
+- `--arch_type`	 : Type of architecture
+	- Options : `fc1` - Simple fully connected network, `lenet5` - LeNet5, `AlexNet` - AlexNet, `resnet18` - Resnet18, `vgg16` - VGG16 
+	- Default : `fc1`
 - `--prune_percent`	: Percentage of weight to be pruned after each cycle. 
 	- Default : `10`
-- `--epochs`	: Number of cycle of pruning that should be done. 
-	- Default : `35`
-- `--lr`	: Learning rate 
-	- Default : `1.2e-3`
-- `--batch_size`	: Batch size 
-	- Default : `60`
-- `--test_freq`	: Frequency for Validation 
-	- Default : `1`
-- `--gpu`	: Decide which GPU the program should use 
-	- Default : `0`
+- `--mini_batch`	: Experiment on mini-batch
+	- Default : `False`
+- `--score`	: Using score matrix to determine the pruning mask
+	- Default : `False`
 - `--binarize`	: Model binarization
 	- Default : `False`
 
@@ -42,22 +41,17 @@ The-Lottery-Ticket-Hypothesis-Binary-Neural-Networks-Pruning
 ├── models
 │   ├── cifar10
 │   │   ├── AlexNet.py
-│   │   ├── densenet.py
 │   │   ├── fc1.py
 │   │   ├── LeNet5.py
 │   │   ├── resnet.py
-│   │   └── vgg.py
-│   ├── cifar100
-│   │   ├── AlexNet.py
-│   │   ├── fc1.py
-│   │   ├── LeNet5.py
-│   │   ├── resnet.py
+│   │   ├── SmallVGG.py
 │   │   └── vgg.py
 │   └── mnist
 │       ├── AlexNet.py
 │       ├── fc1.py
 │       ├── LeNet5.py
 │       ├── resnet.py
+│       ├── SmallVGG.py
 │       └── vgg.py
 ├── dumps
 ├── main.py
