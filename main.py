@@ -26,7 +26,7 @@ parser.add_argument('--epochs', default=50, type=int)
 parser.add_argument('--test_freq', default=50, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
 parser.add_argument('--dataset', default='mnist', choices=['mnist', 'cifar10'], type=str)
-parser.add_argument('--arch_type', default='Conv8', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
+parser.add_argument('--arch_type', default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
 parser.add_argument('--prune_percent', default=5, type=int, help='Pruning percent')
 parser.add_argument('--mini_batch', action='store_true')
 parser.add_argument('--score', action='store_true')
@@ -93,7 +93,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                         tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
                         alive = tensor[np.nonzero(tensor)]
                         percentile_value = np.percentile(abs(alive), args.prune_percent)
-                        mask[cnt] = np.where(abs(score[cnt] if args.score else p.data) < percentile_value, 0, mask[cnt])
+                        mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
                         p.data = torch.from_numpy(mask[cnt] * p.data.cpu().numpy()).to(p.device)
                         if args.score:
                             score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
@@ -296,7 +296,7 @@ if __name__=='__main__':
                         tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
                         alive = tensor[np.nonzero(tensor)]
                         percentile_value = np.percentile(abs(alive), args.prune_percent)
-                        mask[cnt] = np.where(abs(score[cnt] if args.score else p.data) < percentile_value, 0, mask[cnt])
+                        mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
                         if args.score:
                             score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
                         cnt += 1
