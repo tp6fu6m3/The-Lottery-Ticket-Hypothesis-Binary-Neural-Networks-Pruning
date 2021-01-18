@@ -15,19 +15,19 @@ python3 main.py
 - `--lr`	: Learning rate 
 	- Default : `1.2e-3`
 - `--epochs`	: Number of cycle of pruning that should be done. 
-	- Default : `35`
+	- Default : `50`
 - `--test_freq`	: Frequency for Validation 
-	- Default : `1`
+	- Default : `50`
 - `--batch_size`	: Batch size 
 	- Default : `60`
 - `--dataset`	: Choice of dataset 
-	- Options : `mnist`, `fashionmnist`, `cifar10`, `cifar100` 
+	- Options : `mnist`, `cifar10`
 	- Default : `mnist`
 - `--arch_type`	 : Type of architecture
 	- Options : `fc1` - Simple fully connected network, `lenet5` - LeNet5, `AlexNet` - AlexNet, `resnet18` - Resnet18, `vgg16` - VGG16 
 	- Default : `fc1`
 - `--prune_percent`	: Percentage of weight to be pruned after each cycle. 
-	- Default : `10`
+	- Default : `5`
 - `--mini_batch`	: Experiment on mini-batch
 	- Default : `False`
 - `--score`	: Using score matrix to determine the pruning mask
