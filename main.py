@@ -32,6 +32,7 @@ parser.add_argument('--prune_percent', default=5, type=int, help='Pruning percen
 parser.add_argument('--mini_batch', action='store_true')
 parser.add_argument('--score', action='store_true')
 parser.add_argument('--binarize', action='store_true')
+parser.add_argument('--reinit', action='store_true')
 args = parser.parse_args()
 
 sns.set_style('whitegrid')
@@ -310,13 +311,21 @@ if __name__=='__main__':
                     if args.score:
                         score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
                     cnt += 1
-            cnt = 0
-            for name, p in model.named_parameters(): 
-                if 'weight' in name: 
-                    p.data = torch.from_numpy(mask[cnt] * initial_state_dict[name].cpu().numpy()).to(p.device)
-                    cnt += 1
-                if 'bias' in name:
-                    p.data = initial_state_dict[name]
+            if args.reinit:
+                model.apply(weight_init)
+                cnt = 0
+                for name, p in model.named_parameters(): 
+                    if 'weight' in name: 
+                        p.data = torch.from_numpy(mask[cnt] * p.data.cpu().numpy()).to(p.device)
+                        cnt += 1
+            else:
+                cnt = 0
+                for name, p in model.named_parameters(): 
+                    if 'weight' in name: 
+                        p.data = torch.from_numpy(mask[cnt] * initial_state_dict[name].cpu().numpy()).to(p.device)
+                        cnt += 1
+                    if 'bias' in name:
+                        p.data = initial_state_dict[name]
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
             comp1 = utils.print_nonzeros(model)
             comp_ratio.append(comp1)
