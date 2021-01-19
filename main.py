@@ -22,13 +22,13 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr', default= 1.2e-3, type=float)
-parser.add_argument('--prune_ite', default=30, type=int)
-parser.add_argument('--train_ite', default=100, type=int)
-parser.add_argument('--test_freq', default=10, type=int)
+parser.add_argument('--prune_ite', default=10, type=int)
+parser.add_argument('--train_ite', default=2, type=int)
+parser.add_argument('--test_freq', default=2, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
-parser.add_argument('--dataset', default='cifar10', choices=['mnist', 'cifar10'], type=str)
+parser.add_argument('--dataset', default='mnist', choices=['mnist', 'cifar10'], type=str)
 parser.add_argument('--arch_type', default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
-parser.add_argument('--prune_percent', default=5, type=int, help='Pruning percent')
+parser.add_argument('--prune_percent', default=10, type=int, help='Pruning percent')
 parser.add_argument('--mini_batch', action='store_true')
 parser.add_argument('--score', action='store_true')
 parser.add_argument('--binarize', action='store_true')
@@ -91,13 +91,17 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 cnt = 0
                 for name, p in model.named_parameters():
                     if 'weight' in name:
-                        tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
-                        alive = tensor[np.nonzero(tensor)]
-                        percentile_value = np.percentile(abs(alive), args.prune_percent)
-                        mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
-                        p.data = torch.from_numpy(mask[cnt] * p.data.cpu().numpy()).to(p.device)
                         if args.score:
-                            score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
+                            if score[cnt].dim()>3:
+                                sorted, indices = torch.sort(torch.abs(score[cnt]), dim=0)
+                                tensor = indices.cpu().numpy()
+                                percentile_value = np.percentile(tensor, args.prune_percent)
+                                mask[cnt] = np.where(tensor < percentile_value, 0, mask[cnt])
+                        else:
+                            tensor = p.data.cpu().numpy()
+                            alive = tensor[np.nonzero(tensor)]
+                            percentile_value = np.percentile(abs(alive), args.prune_percent)
+                            mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
                         cnt += 1
             loss.append(train_loss.item())
             
@@ -280,9 +284,9 @@ if __name__=='__main__':
         if 'weight' in name:
             tensor = p.data.cpu().numpy()
             mask.append(np.ones_like(tensor))
-            try:
+            if p.data.dim()>1:
                 score.append(init.xavier_normal_(torch.ones_like(p.data)))
-            except:
+            else:
                 score.append(init.normal_(torch.ones_like(p.data), mean=1, std=0.02))
     
     optimizer = torch.optim.Adam(model.parameters(), weight_decay=1e-4)
@@ -304,12 +308,17 @@ if __name__=='__main__':
             cnt = 0
             for name, p in model.named_parameters():
                 if 'weight' in name:
-                    tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
-                    alive = tensor[np.nonzero(tensor)]
-                    percentile_value = np.percentile(abs(alive), args.prune_percent)
-                    mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
                     if args.score:
-                        score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
+                        if score[cnt].dim()>3:
+                            sorted, indices = torch.sort(torch.abs(score[cnt]), dim=0)
+                            tensor = indices.cpu().numpy()
+                            percentile_value = np.percentile(tensor, args.prune_percent)
+                            mask[cnt] = np.where(tensor < percentile_value, 0, mask[cnt])
+                    else:
+                        tensor = p.data.cpu().numpy()
+                        alive = tensor[np.nonzero(tensor)]
+                        percentile_value = np.percentile(abs(alive), args.prune_percent)
+                        mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
                     cnt += 1
             if args.reinit:
                 model.apply(weight_init)
