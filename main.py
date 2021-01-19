@@ -22,10 +22,11 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr', default= 1.2e-3, type=float)
-parser.add_argument('--epochs', default=50, type=int)
-parser.add_argument('--test_freq', default=50, type=int)
+parser.add_argument('--prune_ite', default=30, type=int)
+parser.add_argument('--train_ite', default=100, type=int)
+parser.add_argument('--test_freq', default=10, type=int)
 parser.add_argument('--batch_size', default=60, type=int)
-parser.add_argument('--dataset', default='mnist', choices=['mnist', 'cifar10'], type=str)
+parser.add_argument('--dataset', default='cifar10', choices=['mnist', 'cifar10'], type=str)
 parser.add_argument('--arch_type', default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
 parser.add_argument('--prune_percent', default=5, type=int, help='Pruning percent')
 parser.add_argument('--mini_batch', action='store_true')
@@ -38,7 +39,6 @@ sns.set_style('whitegrid')
 # Function for Training
 def train(model, train_loader, optimizer, criterion, mask, score):
     best_accuracy = 0
-    train_ite = len(train_loader)
     compress = []
     bestacc = []
     loss = []
@@ -85,7 +85,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 cnt += 1
         
         optimizer.step()
-        if args.mini_batch or i%args.test_freq==args.test_freq-1:
+        if args.mini_batch or i%(len(train_loader)//args.test_freq)==0:
             if args.mini_batch:
                 cnt = 0
                 for name, p in model.named_parameters():
@@ -116,7 +116,10 @@ def train(model, train_loader, optimizer, criterion, mask, score):
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
     with open(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/mask_{comp1}.pkl', 'wb') as fp:
         pickle.dump(mask, fp)
-    return loss, acc, best_accuracy, compress, bestacc
+    if args.mini_batch:
+        return loss, acc, compress, bestacc
+    else:
+        return loss, acc, best_accuracy
     
 
 # Function for Testing
@@ -286,20 +289,27 @@ if __name__=='__main__':
     
     comp_ratio = []
     bestacc = []
-    for i in range(args.epochs):
-        loss, acc, best_accuracy_, compress_, bestacc_ = train(model, train_loader, optimizer, criterion, mask, score)
-        if i:
-            if not args.mini_batch:
-                cnt = 0
-                for name, p in model.named_parameters():
-                    if 'weight' in name:
-                        tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
-                        alive = tensor[np.nonzero(tensor)]
-                        percentile_value = np.percentile(abs(alive), args.prune_percent)
-                        mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
-                        if args.score:
-                            score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
-                        cnt += 1
+    for i in range(args.prune_ite):
+        if args.mini_batch:
+            loss, acc, comp_ratio, bestacc = train(model, train_loader, optimizer, criterion, mask, score)
+            comp1 = utils.print_nonzeros(model)
+        else:
+            loss = []
+            acc = []
+            for j in range(args.train_ite):
+                loss_, acc_, best_accuracy_ = train(model, train_loader, optimizer, criterion, mask, score)
+                loss += loss_
+                acc += acc_
+            cnt = 0
+            for name, p in model.named_parameters():
+                if 'weight' in name:
+                    tensor = score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()
+                    alive = tensor[np.nonzero(tensor)]
+                    percentile_value = np.percentile(abs(alive), args.prune_percent)
+                    mask[cnt] = np.where(abs(score[cnt].cpu().numpy() if args.score else p.data.cpu().numpy()) < percentile_value, 0, mask[cnt])
+                    if args.score:
+                        score[cnt] = torch.from_numpy(mask[cnt] * score[cnt].cpu().numpy()).to(p.device)
+                    cnt += 1
             cnt = 0
             for name, p in model.named_parameters(): 
                 if 'weight' in name: 
@@ -307,13 +317,8 @@ if __name__=='__main__':
                     cnt += 1
                 if 'bias' in name:
                     p.data = initial_state_dict[name]
-        
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-        comp1 = utils.print_nonzeros(model)
-        if args.mini_batch:
-            comp_ratio += compress_
-            bestacc += bestacc_
-        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+            comp1 = utils.print_nonzeros(model)
             comp_ratio.append(comp1)
             bestacc.append(best_accuracy_)
         
