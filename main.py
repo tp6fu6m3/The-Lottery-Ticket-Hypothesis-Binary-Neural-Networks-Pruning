@@ -12,30 +12,26 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from torch.autograd import Function
 
 # Custom Libraries
 import utils
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--lr', default= 1.2e-3, type=float)
-parser.add_argument('--prune_ite', default=10, type=int)
-parser.add_argument('--train_ite', default=2, type=int)
-parser.add_argument('--test_freq', default=2, type=int)
-parser.add_argument('--batch_size', default=60, type=int)
-parser.add_argument('--dataset', default='mnist', choices=['mnist', 'cifar10'], type=str)
-parser.add_argument('--arch_type', default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
+parser.add_argument('--lr'          , default= 1.2e-3, type=float)
+parser.add_argument('--prune_ite'   , default=10, type=int)
+parser.add_argument('--train_ite'   , default=2, type=int)
+parser.add_argument('--test_freq'   , default=2, type=int)
+parser.add_argument('--batch_size'  , default=60, type=int)
+parser.add_argument('--dataset'     , default='mnist', choices=['mnist', 'cifar10'], type=str)
+parser.add_argument('--arch_type'   , default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
 parser.add_argument('--prune_percent', default=10, type=int, help='Pruning percent')
-parser.add_argument('--mini_batch', action='store_true')
-parser.add_argument('--score', action='store_true')
-parser.add_argument('--binarize', action='store_true')
-parser.add_argument('--reinit', action='store_true')
+parser.add_argument('--mini_batch'  , action='store_true')
+parser.add_argument('--score'       , action='store_true')
+parser.add_argument('--binarize'    , action='store_true')
+parser.add_argument('--reinit'      , action='store_true')
 args = parser.parse_args()
-
-sns.set_style('whitegrid')
 
 # Function for Training
 def train(model, train_loader, optimizer, criterion, mask, score):
@@ -52,7 +48,6 @@ def train(model, train_loader, optimizer, criterion, mask, score):
         imgs, targets = imgs.to(device), targets.to(device)
         lr = optimizer.param_groups[0]['lr']
         optimizer.zero_grad()
-        comp1 = utils.print_nonzeros(model)
         
         if args.binarize:
             W = []
@@ -86,23 +81,28 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                 cnt += 1
         
         optimizer.step()
-        if args.mini_batch or i%(len(train_loader)//args.test_freq)==0:
-            if args.mini_batch:
-                cnt = 0
-                for name, p in model.named_parameters():
-                    if 'weight' in name:
-                        if args.score:
-                            if score[cnt].dim()>3:
-                                sorted, indices = torch.sort(torch.abs(score[cnt]), dim=0)
-                                tensor = indices.cpu().numpy()
-                                percentile_value = np.percentile(tensor, args.prune_percent)
-                                mask[cnt] = np.where(tensor < percentile_value, 0, mask[cnt])
-                        else:
-                            tensor = p.data.cpu().numpy()
-                            alive = tensor[np.nonzero(tensor)]
-                            percentile_value = np.percentile(abs(alive), args.prune_percent)
-                            mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
-                        cnt += 1
+        
+        if args.mini_batch:
+            cnt = 0
+            for name, p in model.named_parameters():
+                if 'weight' in name:
+                    if args.score:
+                        if score[cnt].dim()>3:
+                            sorted, indices = torch.sort(torch.abs(score[cnt]), dim=0)
+                            tensor = indices.cpu().numpy()
+                            percentile_value = args.prune_percent * i / 10000 * score[cnt].size(0)
+                            mask[cnt] = np.where(tensor < percentile_value, 0, mask[cnt])
+                            #print(np.count_nonzero(mask[cnt])/np.prod(mask[cnt].shape))
+                    else:
+                        tensor = p.data.cpu().numpy()
+                        alive = tensor[np.nonzero(tensor)]
+                        percentile_value = np.percentile(abs(alive), args.prune_percent)
+                        mask[cnt] = np.where(abs(tensor) < percentile_value, 0, mask[cnt])
+                    p.data = torch.from_numpy(mask[cnt] * p.data.cpu().numpy()).to(p.device)
+                    cnt += 1
+            #print(utils.print_nonzeros(model))
+        comp1 = utils.print_nonzeros(model)
+        if i%(len(train_loader)//args.test_freq)==0:
             loss.append(train_loss.item())
             
             accuracy = test(model, mask, test_loader, criterion)
@@ -115,7 +115,6 @@ def train(model, train_loader, optimizer, criterion, mask, score):
             #print(f'Train Epoch: {i}/{train_ite} Loss: {train_loss.item():.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')
             #pbar.set_description(f'Train Epoch: {i}/{train_ite} Loss: {loss:.6f} Accuracy: {accuracy:.2f}% Best Accuracy: {best_accuracy:.2f}%')       
             if args.mini_batch:
-                comp1 = utils.print_nonzeros(model)
                 compress.append(comp1)
                 bestacc.append(best_accuracy)
     utils.checkdir(f'{os.getcwd()}/dumps/lt/{args.arch_type}/{args.dataset}/')
