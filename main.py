@@ -25,7 +25,7 @@ parser.add_argument('--train_ite'   , default=2, type=int)
 parser.add_argument('--test_freq'   , default=2, type=int)
 parser.add_argument('--batch_size'  , default=60, type=int)
 parser.add_argument('--dataset'     , default='mnist', choices=['mnist', 'cifar10'], type=str)
-parser.add_argument('--arch_type'   , default='Conv2', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
+parser.add_argument('--arch_type'   , default='Conv6', choices=['fc1', 'Conv2', 'Conv4', 'Conv6', 'Conv8', 'lenet5', 'alexnet', 'vgg16', 'resnet18', 'densenet121'], type=str)
 parser.add_argument('--prune_percent', default=10, type=int, help='Pruning percent')
 parser.add_argument('--mini_batch'  , action='store_true')
 parser.add_argument('--score'       , action='store_true')
@@ -90,7 +90,7 @@ def train(model, train_loader, optimizer, criterion, mask, score):
                         if score[cnt].dim()>3:
                             sorted, indices = torch.sort(torch.abs(score[cnt]), dim=0)
                             tensor = indices.cpu().numpy()
-                            percentile_value = args.prune_percent * i / 10000 * score[cnt].size(0)
+                            percentile_value = np.percentile(tensor, args.prune_percent)
                             mask[cnt] = np.where(tensor < percentile_value, 0, mask[cnt])
                             #print(np.count_nonzero(mask[cnt])/np.prod(mask[cnt].shape))
                     else:
